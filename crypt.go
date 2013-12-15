@@ -18,6 +18,8 @@ const (
 	version   = 1
 )
 
+// Crypter encrypt/decrypts with AES (Rijndael) in cipher block counter
+// mode (CTR) and authenticate with HMAC-SHA.
 type Crypter struct {
 	HashFunc func() hash.Hash
 	HashSize int
@@ -65,9 +67,13 @@ func (c *Crypter) Encrypt(dst io.Writer, src io.Reader) (err error) {
 	if _, err := rand.Read(salt); err != nil {
 		return err
 	}
+	iv := make([]byte, blockSize)
+	if _, err := rand.Read(iv); err != nil {
+		return err
+	}
 
 	aesKey, hmacKey := c.Key.Derive(salt)
-	header := c.encHeader(salt, make([]byte, aes.BlockSize), hmacKey)
+	header := c.encHeader(salt, iv, hmacKey)
 	if _, err := dst.Write(header); err != nil {
 		return err
 	}
@@ -79,7 +85,7 @@ func (c *Crypter) Encrypt(dst io.Writer, src io.Reader) (err error) {
 		return err
 	}
 
-	stream := cipher.NewCTR(block, make([]byte, aes.BlockSize))
+	stream := cipher.NewCTR(block, iv)
 
 	buf := make([]byte, c.bufSize())
 	n := 0
@@ -115,7 +121,7 @@ func (c *Crypter) Decrypt(dst io.Writer, src io.Reader) (err error) {
 		return err
 	}
 
-	salt, _, err := c.decHeader(header)
+	salt, iv, err := c.decHeader(header)
 	if err != nil {
 		return err
 	}
@@ -134,7 +140,7 @@ func (c *Crypter) Decrypt(dst io.Writer, src io.Reader) (err error) {
 		return err
 	}
 
-	stream := cipher.NewCTR(block, make([]byte, aes.BlockSize))
+	stream := cipher.NewCTR(block, iv)
 	buf := make([]byte, c.bufSize()+c.HashSize)
 	n := 0
 	for {
