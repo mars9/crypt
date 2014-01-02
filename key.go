@@ -39,7 +39,7 @@ func (k Pbkdf2Key) Derive(salt []byte) (aesKey, hmacKey []byte) {
 func (k Pbkdf2Key) Size() int { return k.size }
 
 func (k Pbkdf2Key) Reset() {
-	for i, _ := range k.password {
+	for i := range k.password {
 		k.password[i] = 0
 	}
 }
@@ -67,7 +67,7 @@ func (k ScryptKey) Derive(salt []byte) (aesKey, hmacKey []byte) {
 func (k ScryptKey) Size() int { return k.size }
 
 func (k ScryptKey) Reset() {
-	for i, _ := range k.password {
+	for i := range k.password {
 		k.password[i] = 0
 	}
 }

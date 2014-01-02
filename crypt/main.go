@@ -12,16 +12,32 @@ import (
 	"github.com/mars9/passwd"
 )
 
-func main() {
-	decrypt := flag.Bool("d", false, "decrypt infile to oufile")
-	flag.Usage = usage
-	flag.Parse()
-	narg := flag.NArg()
-	if narg > 2 {
-		usage()
+var (
+	decrypt = flag.Bool("d", false, "decrypt infile to oufile")
+	file    = flag.String("f", "", "file containing passphrase")
+)
+
+func passphrase() ([]byte, error) {
+	name := os.Getenv("CRYPTPASSPHRASE")
+	if *file != "" {
+		name = *file
 	}
-	if runtime.GOOS == "windows" && narg == 0 {
-		usage()
+	if name != "" {
+		f, err := os.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		defer f.Close()
+		b := make([]byte, 256)
+		n, err := f.Read(b)
+		if err != nil {
+			return nil, err
+		}
+		b = b[0:n]
+		if b[len(b)-1] == '\n' {
+			b = b[0 : len(b)-1]
+		}
+		return b, nil
 	}
 
 	password, err := passwd.GetPasswd("Enter passphrase: ")
@@ -33,14 +49,36 @@ func main() {
 	if !*decrypt {
 		confirm, err := passwd.GetPasswd("Confirm passphrase: ")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "get passphrase: %v\n", err)
-			os.Exit(3)
+			return nil, fmt.Errorf("get passphrase: %v\n", err)
 		}
 		if !bytes.Equal(password, confirm) {
-			fmt.Fprintln(os.Stderr, "Passphrase mismatch, try again.")
-			os.Exit(3)
+			return nil, fmt.Errorf("Passphrase mismatch, try again.")
 		}
 	}
+	return password, nil
+}
+
+func main() {
+	flag.Usage = usage
+	flag.Parse()
+	narg := flag.NArg()
+	if narg > 2 {
+		usage()
+	}
+	if runtime.GOOS == "windows" && narg == 0 {
+		usage()
+	}
+
+	password, err := passphrase()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", err)
+		os.Exit(3)
+	}
+	defer func() {
+		for i := range password {
+			password[i] = 0
+		}
+	}()
 
 	in := os.Stdin
 	out := os.Stdout
