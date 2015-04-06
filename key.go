@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/scrypt"
 )
 
+// Key defines the key derivation function interface.
 type Key interface {
 	// Derive returns the AES key and HMAC-SHA key, for the given password,
 	// salt combination.
@@ -20,40 +21,45 @@ type Key interface {
 	Reset()
 }
 
-type Pbkdf2Key struct {
+type pbkdf2Key struct {
 	password []byte
 	size     int
 }
 
-func NewPbkdf2Key(password []byte, size int) Pbkdf2Key {
-	return Pbkdf2Key{password: password, size: size}
+// NewPbkdf2Key returns the key derivation function PBKDF2 as defined in
+// RFC 2898.
+func NewPbkdf2Key(password []byte, size int) Key {
+	return pbkdf2Key{password: password, size: size}
 }
 
-func (k Pbkdf2Key) Derive(salt []byte) (aesKey, hmacKey []byte) {
+func (k pbkdf2Key) Derive(salt []byte) (aesKey, hmacKey []byte) {
 	key := pbkdf2.Key(k.password, salt, 4096, 2*k.size, sha1.New)
 	aesKey = key[:k.size]
 	hmacKey = key[k.size:]
 	return aesKey, hmacKey
 }
 
-func (k Pbkdf2Key) Size() int { return k.size }
+func (k pbkdf2Key) Size() int { return k.size }
 
-func (k Pbkdf2Key) Reset() {
+func (k pbkdf2Key) Reset() {
 	for i := range k.password {
 		k.password[i] = 0
 	}
 }
 
-type ScryptKey struct {
+type scryptKey struct {
 	password []byte
 	size     int
 }
 
-func NewScryptKey(password []byte, size int) ScryptKey {
-	return ScryptKey{password: password, size: size}
+// NewScryptKey returns the scrypt key derivation function as defined in
+// Colin Percival's paper "Stronger Key Derivation via Sequential
+// Memory-Hard Functions".
+func NewScryptKey(password []byte, size int) Key {
+	return scryptKey{password: password, size: size}
 }
 
-func (k ScryptKey) Derive(salt []byte) (aesKey, hmacKey []byte) {
+func (k scryptKey) Derive(salt []byte) (aesKey, hmacKey []byte) {
 	key, err := scrypt.Key(k.password, salt, 16384, 8, 1, 2*k.size)
 	if err != nil {
 		panic(err)
@@ -64,9 +70,9 @@ func (k ScryptKey) Derive(salt []byte) (aesKey, hmacKey []byte) {
 	return aesKey, hmacKey
 }
 
-func (k ScryptKey) Size() int { return k.size }
+func (k scryptKey) Size() int { return k.size }
 
-func (k ScryptKey) Reset() {
+func (k scryptKey) Reset() {
 	for i := range k.password {
 		k.password[i] = 0
 	}

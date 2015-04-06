@@ -9,53 +9,63 @@ import (
 	"runtime"
 
 	"github.com/mars9/crypt"
+	"github.com/mars9/keyring"
 	"github.com/mars9/passwd"
 )
 
 var (
-	decrypt = flag.Bool("d", false, "decrypt infile to oufile")
-	file    = flag.String("f", "", "file containing passphrase")
+	prompt      = flag.Bool("p", false, "prompt to enter a passphrase")
+	decrypt     = flag.Bool("d", false, "decrypt infile to oufile")
+	service     = flag.String("s", "go-crypto", "keyring service name")
+	username    = flag.String("u", os.Getenv("USER"), "keyring username")
+	initKeyring = flag.Bool("i", false, "intialize keyring")
 )
 
 func passphrase() ([]byte, error) {
-	name := os.Getenv("CRYPTPASSPHRASE")
-	if *file != "" {
-		name = *file
-	}
-	if name != "" {
-		f, err := os.Open(name)
-		if err != nil {
-			return nil, err
-		}
-		defer f.Close()
-		b := make([]byte, 256)
-		n, err := f.Read(b)
-		if err != nil {
-			return nil, err
-		}
-		b = b[0:n]
-		if b[len(b)-1] == '\n' {
-			b = b[0 : len(b)-1]
-		}
-		return b, nil
-	}
-
-	password, err := passwd.GetPasswd("Enter passphrase: ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "get passphrase: %v\n", err)
-		os.Exit(3)
-	}
-
-	if !*decrypt {
-		confirm, err := passwd.GetPasswd("Confirm passphrase: ")
+	if *prompt {
+		password, err := passwd.Get("Enter passphrase: ")
 		if err != nil {
 			return nil, fmt.Errorf("get passphrase: %v\n", err)
 		}
-		if !bytes.Equal(password, confirm) {
-			return nil, fmt.Errorf("Passphrase mismatch, try again.")
+
+		if !*decrypt {
+			confirm, err := passwd.Get("Confirm passphrase: ")
+			if err != nil {
+				return nil, fmt.Errorf("get passphrase: %v\n", err)
+			}
+			if !bytes.Equal(password, confirm) {
+				return nil, fmt.Errorf("Passphrase mismatch, try again.")
+			}
 		}
+		return password, nil
 	}
-	return password, nil
+
+	ring, err := keyring.New()
+	if err != nil {
+		return nil, err
+	}
+	return ring.Get(*service, *username)
+}
+
+func initialize() error {
+	password, err := passwd.Get("Enter passphrase: ")
+	if err != nil {
+		return fmt.Errorf("get passphrase: %v\n", err)
+	}
+
+	confirm, err := passwd.Get("Confirm passphrase: ")
+	if err != nil {
+		return fmt.Errorf("get passphrase: %v\n", err)
+	}
+	if !bytes.Equal(password, confirm) {
+		return fmt.Errorf("Passphrase mismatch, try again.")
+	}
+
+	ring, err := keyring.New()
+	if err != nil {
+		return err
+	}
+	return ring.Set(*service, *username, password)
 }
 
 func main() {
@@ -67,6 +77,14 @@ func main() {
 	}
 	if runtime.GOOS == "windows" && narg == 0 {
 		usage()
+	}
+
+	if *initKeyring {
+		if err := initialize(); err != nil {
+			fmt.Fprintf(os.Stderr, "initialize keyring: %v", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	password, err := passphrase()
@@ -89,6 +107,7 @@ func main() {
 			os.Exit(1)
 		}
 		defer in.Close()
+
 		if narg == 2 {
 			out, err = os.Create(flag.Arg(1))
 			if err != nil {
@@ -129,9 +148,9 @@ func main() {
 
 func usage() {
 	if runtime.GOOS == "windows" {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-d] infile [outfile]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] infile [outfile]\n", os.Args[0])
 	} else {
-		fmt.Fprintf(os.Stderr, "Usage: %s [-d] [infile] [[outfile]]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s [options] [infile] [[outfile]]\n", os.Args[0])
 	}
 	fmt.Fprint(os.Stderr, usageMsg)
 	fmt.Fprintf(os.Stderr, "\nOptions:\n")
